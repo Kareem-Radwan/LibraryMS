@@ -514,4 +514,32 @@ public class DatabaseHelper {
         }
         return transactions;
     }
+    public static String getSetting(String key) {
+        String query = "SELECT settingValue FROM settings WHERE settingKey = ?";
+        try (Connection conn = DriverManager.getConnection(URL);
+             PreparedStatement pstmt = conn.prepareStatement(query)) {
+            pstmt.setString(1, key);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                return rs.getString("settingValue");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    public static boolean updateSetting(String key, String value) {
+        String query = "UPDATE settings SET settingValue = ? WHERE settingKey = ?";
+        try (Connection conn = DriverManager.getConnection(URL);
+             PreparedStatement pstmt = conn.prepareStatement(query)) {
+            pstmt.setString(1, value);
+            pstmt.setString(2, key);
+            pstmt.executeUpdate();
+            return true;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
 }

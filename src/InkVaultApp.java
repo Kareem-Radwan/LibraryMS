@@ -61,6 +61,7 @@ public class InkVaultApp extends JFrame {
         // Role-based panels
         if (loggedInUser.getRole().equals("ADMIN")) {
             mainContentPanel.add(createUserManagementPanel(), "Users");
+            mainContentPanel.add(createSettingsPanel(), "Settings");
         }
         
         if (!loggedInUser.getRole().equals("MEMBER")) {
@@ -98,6 +99,7 @@ public class InkVaultApp extends JFrame {
         
         if (loggedInUser.getRole().equals("ADMIN")) {
             navItems.add("Users");
+            navItems.add("Settings");
         }
         
         if (!loggedInUser.getRole().equals("MEMBER")) {
@@ -279,19 +281,25 @@ public class InkVaultApp extends JFrame {
         buttonPanel.setBackground(new Color(25, 25, 25));
         buttonPanel.setBorder(new EmptyBorder(20, 0, 0, 0));
         
-        JButton addButton = createStyledButton("Add New Book", new Color(46, 204, 113));
-        JButton editButton = createStyledButton("Edit Selected", new Color(241, 196, 15));
-        JButton deleteButton = createStyledButton("Delete Selected", new Color(231, 76, 60));
         JButton refreshButton = createStyledButton("Refresh List", new Color(52, 152, 219));
-
-        addButton.addActionListener(e -> showAddBookDialog());
-        editButton.addActionListener(e -> showEditBookDialog(bookTable));
-        deleteButton.addActionListener(e -> deleteSelectedBook(bookTable));
         refreshButton.addActionListener(e -> { loadBookData(); loadTransactionComboBoxes(); });
 
-        buttonPanel.add(addButton);
-        buttonPanel.add(editButton);
-        buttonPanel.add(deleteButton);
+        if (loggedInUser.getRole().equals("ADMIN")) {
+            JButton addButton = createStyledButton("Add New Book", new Color(46, 204, 113));
+            JButton editButton = createStyledButton("Edit Selected", new Color(241, 196, 15));
+            JButton deleteButton = createStyledButton("Delete Selected", new Color(231, 76, 60));
+            addButton.addActionListener(e -> showAddBookDialog());
+            editButton.addActionListener(e -> showEditBookDialog(bookTable));
+            deleteButton.addActionListener(e -> deleteSelectedBook(bookTable));
+            buttonPanel.add(addButton);
+            buttonPanel.add(editButton);
+            buttonPanel.add(deleteButton);
+        } else if (loggedInUser.getRole().equals("MEMBER")) {
+            JButton borrowButton = createStyledButton("Borrow Book", new Color(155, 89, 182));
+            borrowButton.addActionListener(e -> borrowSelectedBook(bookTable));
+            buttonPanel.add(borrowButton);
+        }
+
         buttonPanel.add(refreshButton);
         panel.add(buttonPanel, BorderLayout.SOUTH);
 
@@ -477,6 +485,30 @@ public class InkVaultApp extends JFrame {
         gbc.gridx = 0; gbc.gridy = 5; gbc.gridwidth = 2;
         dialog.add(buttonPanel, gbc);
         dialog.setVisible(true);
+    }
+
+    private void borrowSelectedBook(JTable bookTable) {
+        int selectedRow = bookTable.getSelectedRow();
+        if (selectedRow == -1) {
+            JOptionPane.showMessageDialog(this, "Please select a book to borrow.", "No Selection", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        int modelRow = bookTable.convertRowIndexToModel(selectedRow);
+        int bookId = (int) bookTableModel.getValueAt(modelRow, 0);
+
+        Book book = DatabaseHelper.getBookById(bookId);
+        if (book != null && loggedInUser instanceof Member) {
+            Member member = (Member) loggedInUser;
+            member = DatabaseHelper.getMemberById(member.getUserId());
+            if (libraryService.issueBook(book, member)) {
+                JOptionPane.showMessageDialog(this, "Book borrowed successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+                loadBookData();
+                updateDashboardMetrics();
+                ((Member)loggedInUser).setBorrowedCount(member.getBorrowedCount());
+            } else {
+                JOptionPane.showMessageDialog(this, "Failed to borrow book. It might be unavailable or you reached the limit.", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        }
     }
 
     private void deleteSelectedBook(JTable bookTable) {
@@ -1123,7 +1155,7 @@ public class InkVaultApp extends JFrame {
         title.setBorder(new EmptyBorder(0, 0, 20, 0));
         panel.add(title, BorderLayout.NORTH);
 
-        String[] columnNames = { "Book Title", "Author", "Issue Date", "Due Date", "Status" };
+        String[] columnNames = { "Tx ID", "Book Title", "Author", "Issue Date", "Due Date", "Status" };
         DefaultTableModel myBooksTableModel = new DefaultTableModel(columnNames, 0) {
             @Override
             public boolean isCellEditable(int row, int column) { return false; }
@@ -1135,11 +1167,14 @@ public class InkVaultApp extends JFrame {
         scrollPane.setBorder(BorderFactory.createLineBorder(new Color(50, 50, 50)));
         panel.add(scrollPane, BorderLayout.CENTER);
 
+        JButton returnButton = createStyledButton("Return Book", new Color(46, 204, 113));
+        returnButton.addActionListener(e -> returnMemberBook(myBooksTable, myBooksTableModel));
         JButton refreshButton = createStyledButton("Refresh", new Color(52, 152, 219));
         refreshButton.addActionListener(e -> loadMemberBooks(myBooksTableModel));
         
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 20, 10));
         buttonPanel.setBackground(new Color(25, 25, 25));
+        buttonPanel.add(returnButton);
         buttonPanel.add(refreshButton);
         panel.add(buttonPanel, BorderLayout.SOUTH);
 
@@ -1161,6 +1196,7 @@ public class InkVaultApp extends JFrame {
                 }
                 
                 Object[] row = {
+                    t.getTransactionId(),
                     book != null ? book.getTitle() : "Unknown",
                     book != null ? book.getAuthor() : "Unknown",
                     t.getIssueDate().toString(),
@@ -1170,6 +1206,127 @@ public class InkVaultApp extends JFrame {
                 myBooksTableModel.addRow(row);
             }
         }
+    }
+
+    private void returnMemberBook(JTable myBooksTable, DefaultTableModel myBooksTableModel) {
+        int selectedRow = myBooksTable.getSelectedRow();
+        if (selectedRow == -1) {
+            JOptionPane.showMessageDialog(this, "Please select a book to return.", "No Selection", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        int modelRow = myBooksTable.convertRowIndexToModel(selectedRow);
+        int transactionId = (int) myBooksTableModel.getValueAt(modelRow, 0);
+        
+        List<Transaction> transactions = DatabaseHelper.getAllTransactions();
+        Transaction transaction = null;
+        for (Transaction t : transactions) {
+            if (t.getTransactionId() == transactionId) {
+                transaction = t;
+                break;
+            }
+        }
+        
+        if (transaction != null) {
+            if (libraryService.returnBook(transaction)) {
+                String message = "Book returned successfully!";
+                if (libraryService.checkOverdue(transaction)) {
+                    long overdueDays = libraryService.calculateOverdueDays(transaction);
+                    message += "\nNote: Book was " + overdueDays + " day(s) overdue. Fine applied.";
+                }
+                JOptionPane.showMessageDialog(this, message, "Success", JOptionPane.INFORMATION_MESSAGE);
+                loadMemberBooks(myBooksTableModel);
+                loadBookData();
+                updateDashboardMetrics();
+                if (loggedInUser instanceof Member) {
+                    Member m = DatabaseHelper.getMemberById(loggedInUser.getUserId());
+                    if (m != null) {
+                        ((Member)loggedInUser).setBorrowedCount(m.getBorrowedCount());
+                    }
+                }
+            } else {
+                JOptionPane.showMessageDialog(this, "Failed to return book.", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    private JPanel createSettingsPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(new EmptyBorder(30, 30, 30, 30));
+        panel.setBackground(new Color(25, 25, 25));
+
+        JLabel title = new JLabel("System Settings");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 32));
+        title.setForeground(Color.WHITE);
+        title.setBorder(new EmptyBorder(0, 0, 30, 0));
+        panel.add(title, BorderLayout.NORTH);
+
+        JPanel formPanel = new JPanel(new GridBagLayout());
+        formPanel.setBackground(new Color(35, 35, 35));
+        formPanel.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(60, 60, 60), 1, true),
+            new EmptyBorder(30, 30, 30, 30)
+        ));
+        
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(15, 15, 15, 15);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        Font labelFont = new Font("Segoe UI", Font.BOLD, 16);
+
+        JLabel fineLabel = new JLabel("Fine Per Day ($):");
+        fineLabel.setForeground(Color.WHITE);
+        fineLabel.setFont(labelFont);
+        gbc.gridx = 0; gbc.gridy = 0; formPanel.add(fineLabel, gbc);
+        
+        JTextField fineField = new JTextField(DatabaseHelper.getSetting("finePerDay"), 15);
+        fineField.setFont(new Font("Segoe UI", Font.PLAIN, 16));
+        gbc.gridx = 1; formPanel.add(fineField, gbc);
+
+        JLabel maxLimitLabel = new JLabel("Max Borrow Limit:");
+        maxLimitLabel.setForeground(Color.WHITE);
+        maxLimitLabel.setFont(labelFont);
+        gbc.gridx = 0; gbc.gridy = 1; formPanel.add(maxLimitLabel, gbc);
+
+        JTextField maxLimitField = new JTextField(DatabaseHelper.getSetting("maxBorrowLimit"), 15);
+        maxLimitField.setFont(new Font("Segoe UI", Font.PLAIN, 16));
+        gbc.gridx = 1; formPanel.add(maxLimitField, gbc);
+
+        JLabel loanPeriodLabel = new JLabel("Loan Period (Days):");
+        loanPeriodLabel.setForeground(Color.WHITE);
+        loanPeriodLabel.setFont(labelFont);
+        gbc.gridx = 0; gbc.gridy = 2; formPanel.add(loanPeriodLabel, gbc);
+
+        JTextField loanPeriodField = new JTextField(DatabaseHelper.getSetting("loanPeriodDays"), 15);
+        loanPeriodField.setFont(new Font("Segoe UI", Font.PLAIN, 16));
+        gbc.gridx = 1; formPanel.add(loanPeriodField, gbc);
+
+        JButton saveButton = createStyledButton("Save Settings", new Color(46, 204, 113));
+        saveButton.setPreferredSize(new Dimension(200, 45));
+        saveButton.addActionListener(e -> {
+            try {
+                Double.parseDouble(fineField.getText());
+                Integer.parseInt(maxLimitField.getText());
+                Integer.parseInt(loanPeriodField.getText());
+                
+                DatabaseHelper.updateSetting("finePerDay", fineField.getText());
+                DatabaseHelper.updateSetting("maxBorrowLimit", maxLimitField.getText());
+                DatabaseHelper.updateSetting("loanPeriodDays", loanPeriodField.getText());
+                
+                JOptionPane.showMessageDialog(this, "Settings updated successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(this, "Please enter valid numeric values.", "Validation Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 2; gbc.anchor = GridBagConstraints.CENTER;
+        formPanel.add(saveButton, gbc);
+
+        JPanel centerWrapper = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        centerWrapper.setOpaque(false);
+        centerWrapper.add(formPanel);
+        
+        panel.add(centerWrapper, BorderLayout.CENTER);
+        return panel;
     }
 
     public static void main(String[] args) {

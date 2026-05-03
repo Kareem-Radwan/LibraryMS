@@ -2,22 +2,22 @@ import java.time.LocalDate;
 
 public class LibraryService {
 
-    private static final int MAX_BORROW_LIMIT = 3;
-    private static final int LOAN_PERIOD_DAYS = 14;
-
     public boolean issueBook(Book book, Member member) {
+        int maxBorrowLimit = Integer.parseInt(DatabaseHelper.getSetting("maxBorrowLimit"));
+        int loanPeriodDays = Integer.parseInt(DatabaseHelper.getSetting("loanPeriodDays"));
+
         if (!book.isAvailable()) {
             System.out.println("Error: Book is currently checked out.");
             return false;
         }
 
-        if (member.getBorrowedCount() >= MAX_BORROW_LIMIT) {
-            System.out.println("Error: Member has reached the maximum borrowing limit (" + MAX_BORROW_LIMIT + ").");
+        if (member.getBorrowedCount() >= maxBorrowLimit) {
+            System.out.println("Error: Member has reached the maximum borrowing limit (" + maxBorrowLimit + ").");
             return false;
         }
 
         LocalDate issueDate = LocalDate.now();
-        LocalDate dueDate = issueDate.plusDays(LOAN_PERIOD_DAYS);
+        LocalDate dueDate = issueDate.plusDays(loanPeriodDays);
 
         // Save to database
         boolean success = DatabaseHelper.addTransaction(
@@ -52,7 +52,8 @@ public class LibraryService {
         
         if (checkOverdue(transaction)) {
             long overdueDays = calculateOverdueDays(transaction);
-            fine = overdueDays * 1.0; // $1 per day
+            double finePerDay = Double.parseDouble(DatabaseHelper.getSetting("finePerDay"));
+            fine = overdueDays * finePerDay;
         }
         
         boolean success = DatabaseHelper.returnBook(transaction.getTransactionId(), returnDate.toString());
