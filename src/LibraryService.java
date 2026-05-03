@@ -27,7 +27,7 @@ public class LibraryService {
                 dueDate.toString());
 
         if (success) {
-            book.toggleAvailability();
+            book.setAvailableCopies(book.getAvailableCopies() - 1);
             DatabaseHelper.updateBookAvailability(book.getBookId(), false);
             DatabaseHelper.updateMemberBorrowedCount(member.getUserId(), member.getBorrowedCount() + 1);
             member.addTransaction(new Transaction(0, book.getBookId(), member.getUserId(), issueDate, dueDate));
@@ -48,14 +48,24 @@ public class LibraryService {
         }
 
         LocalDate returnDate = LocalDate.now();
+        double fine = 0.0;
+        
+        if (checkOverdue(transaction)) {
+            long overdueDays = calculateOverdueDays(transaction);
+            fine = overdueDays * 1.0; // $1 per day
+        }
+        
         boolean success = DatabaseHelper.returnBook(transaction.getTransactionId(), returnDate.toString());
 
         if (success) {
-            book.toggleAvailability();
+            // Update fine in database
+            DatabaseHelper.updateTransactionFine(transaction.getTransactionId(), fine);
+            
+            book.setAvailableCopies(book.getAvailableCopies() + 1);
             DatabaseHelper.updateBookAvailability(book.getBookId(), true);
             member.decrementBorrowedCount();
             DatabaseHelper.updateMemberBorrowedCount(member.getUserId(), member.getBorrowedCount());
-            System.out.println("Success: Book returned.");
+            System.out.println("Success: Book returned. Fine: $" + fine);
             return true;
         }
 

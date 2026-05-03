@@ -5,8 +5,8 @@ public class Member extends User {
     private int borrowedCount;
     private List<Transaction> history;
 
-    public Member(int userId, String name, String email) {
-        super(userId, name, email);
+    public Member(int userId, String name, String email, String password) {
+        super(userId, name, email, "MEMBER", password);
         this.borrowedCount = 0;
         this.history = new ArrayList<>();
     }

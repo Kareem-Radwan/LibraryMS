@@ -2,15 +2,19 @@ public class Book {
     private int bookId; 
     private String title; 
     private String author; 
-    private String isbn; 
-    private boolean isAvailable;
+    private String isbn;
+    private String genre;
+    private int totalCopies;
+    private int availableCopies;
 
-    public Book(int bookId, String title, String author, String isbn) {
+    public Book(int bookId, String title, String author, String isbn, String genre, int totalCopies, int availableCopies) {
         this.bookId = bookId;
         this.title = title;
         this.author = author;
         this.isbn = isbn;
-        this.isAvailable = true;
+        this.genre = genre;
+        this.totalCopies = totalCopies;
+        this.availableCopies = availableCopies;
     }
 
     public int getBookId() {
@@ -29,11 +33,39 @@ public class Book {
         return isbn;
     }
 
-    public boolean isAvailable() {
-        return isAvailable;
+    public String getGenre() {
+        return genre;
     }
 
-    public void toggleAvailability() {
-        this.isAvailable = !this.isAvailable;
+    public int getTotalCopies() {
+        return totalCopies;
+    }
+
+    public int getAvailableCopies() {
+        return availableCopies;
+    }
+
+    public boolean isAvailable() {
+        return availableCopies > 0;
+    }
+
+    public void setAvailableCopies(int availableCopies) {
+        this.availableCopies = availableCopies;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    public void setAuthor(String author) {
+        this.author = author;
+    }
+
+    public void setGenre(String genre) {
+        this.genre = genre;
+    }
+
+    public void setTotalCopies(int totalCopies) {
+        this.totalCopies = totalCopies;
     }
 }

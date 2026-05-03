@@ -1,4 +1,6 @@
 import javax.swing.*;
+import javax.swing.UIManager;
+import javax.swing.SwingUtilities;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableRowSorter;
 import javax.swing.table.JTableHeader;
@@ -23,6 +25,7 @@ public class InkVaultApp extends JFrame {
     private JComboBox<String> bookCombo;
     private JComboBox<String> memberCombo;
     private LibraryService libraryService;
+    private User loggedInUser;
     
     private JPanel mainContentPanel;
     private CardLayout cardLayout;
@@ -32,8 +35,9 @@ public class InkVaultApp extends JFrame {
     private JLabel totalMembersLabel;
     private JLabel totalTransactionsLabel;
 
-    public InkVaultApp() {
-        setTitle("InkVault - Library Management System");
+    public InkVaultApp(User loggedInUser) {
+        this.loggedInUser = loggedInUser;
+        setTitle("InkVault - Library Management System - " + loggedInUser.getRole() + ": " + loggedInUser.getName());
         setSize(1100, 750);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
@@ -53,8 +57,19 @@ public class InkVaultApp extends JFrame {
         
         mainContentPanel.add(createDashboardPanel(), "Dashboard");
         mainContentPanel.add(createBookInventoryPanel(), "Books");
-        mainContentPanel.add(createMemberRegistryPanel(), "Members");
-        mainContentPanel.add(createTransactionPanel(), "Transactions");
+        
+        // Role-based panels
+        if (loggedInUser.getRole().equals("ADMIN")) {
+            mainContentPanel.add(createUserManagementPanel(), "Users");
+        }
+        
+        if (!loggedInUser.getRole().equals("MEMBER")) {
+            mainContentPanel.add(createMemberRegistryPanel(), "Members");
+            mainContentPanel.add(createTransactionPanel(), "Transactions");
+            mainContentPanel.add(createTransactionHistoryPanel(), "History");
+        } else {
+            mainContentPanel.add(createMemberTransactionPanel(), "My Books");
+        }
 
         add(mainContentPanel, BorderLayout.CENTER);
         
@@ -76,7 +91,23 @@ public class InkVaultApp extends JFrame {
         sidebar.add(logo);
         sidebar.add(Box.createRigidArea(new Dimension(0, 40)));
 
-        String[] navItems = {"Dashboard", "Books", "Members", "Transactions"};
+        // Role-based navigation
+        java.util.List<String> navItems = new java.util.ArrayList<>();
+        navItems.add("Dashboard");
+        navItems.add("Books");
+        
+        if (loggedInUser.getRole().equals("ADMIN")) {
+            navItems.add("Users");
+        }
+        
+        if (!loggedInUser.getRole().equals("MEMBER")) {
+            navItems.add("Members");
+            navItems.add("Transactions");
+            navItems.add("History");
+        } else {
+            navItems.add("My Books");
+        }
+        
         for (String item : navItems) {
             JButton navBtn = new JButton(item);
             navBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -249,14 +280,17 @@ public class InkVaultApp extends JFrame {
         buttonPanel.setBorder(new EmptyBorder(20, 0, 0, 0));
         
         JButton addButton = createStyledButton("Add New Book", new Color(46, 204, 113));
+        JButton editButton = createStyledButton("Edit Selected", new Color(241, 196, 15));
         JButton deleteButton = createStyledButton("Delete Selected", new Color(231, 76, 60));
         JButton refreshButton = createStyledButton("Refresh List", new Color(52, 152, 219));
 
         addButton.addActionListener(e -> showAddBookDialog());
+        editButton.addActionListener(e -> showEditBookDialog(bookTable));
         deleteButton.addActionListener(e -> deleteSelectedBook(bookTable));
         refreshButton.addActionListener(e -> { loadBookData(); loadTransactionComboBoxes(); });
 
         buttonPanel.add(addButton);
+        buttonPanel.add(editButton);
         buttonPanel.add(deleteButton);
         buttonPanel.add(refreshButton);
         panel.add(buttonPanel, BorderLayout.SOUTH);
@@ -341,6 +375,106 @@ public class InkVaultApp extends JFrame {
         buttonPanel.add(cancelButton);
 
         gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 2;
+        dialog.add(buttonPanel, gbc);
+        dialog.setVisible(true);
+    }
+    
+    private void showEditBookDialog(JTable bookTable) {
+        int selectedRow = bookTable.getSelectedRow();
+        if (selectedRow == -1) {
+            JOptionPane.showMessageDialog(this, "Please select a book to edit.", "No Selection", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        int modelRow = bookTable.convertRowIndexToModel(selectedRow);
+        int bookId = (int) bookTableModel.getValueAt(modelRow, 0);
+        Book book = DatabaseHelper.getBookById(bookId);
+        
+        if (book == null) {
+            JOptionPane.showMessageDialog(this, "Book not found.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        
+        JDialog dialog = new JDialog(this, "Edit Book", true);
+        dialog.setSize(450, 400);
+        dialog.setLocationRelativeTo(this);
+        dialog.setLayout(new GridBagLayout());
+        dialog.getContentPane().setBackground(new Color(30, 30, 30));
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(10, 10, 10, 10);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        JTextField titleField = new JTextField(book.getTitle(), 20);
+        JTextField authorField = new JTextField(book.getAuthor(), 20);
+        JTextField isbnField = new JTextField(book.getIsbn(), 20);
+        JTextField genreField = new JTextField(book.getGenre(), 20);
+        JSpinner copiesSpinner = new JSpinner(new SpinnerNumberModel(book.getTotalCopies(), 1, 100, 1));
+        
+        Font labelFont = new Font("Segoe UI", Font.BOLD, 14);
+
+        JLabel titleLabel = new JLabel("Title:");
+        titleLabel.setForeground(Color.WHITE);
+        titleLabel.setFont(labelFont);
+        gbc.gridx = 0; gbc.gridy = 0; dialog.add(titleLabel, gbc);
+        gbc.gridx = 1; dialog.add(titleField, gbc);
+
+        JLabel authorLabel = new JLabel("Author:");
+        authorLabel.setForeground(Color.WHITE);
+        authorLabel.setFont(labelFont);
+        gbc.gridx = 0; gbc.gridy = 1; dialog.add(authorLabel, gbc);
+        gbc.gridx = 1; dialog.add(authorField, gbc);
+
+        JLabel isbnLabel = new JLabel("ISBN:");
+        isbnLabel.setForeground(Color.WHITE);
+        isbnLabel.setFont(labelFont);
+        gbc.gridx = 0; gbc.gridy = 2; dialog.add(isbnLabel, gbc);
+        gbc.gridx = 1; dialog.add(isbnField, gbc);
+
+        JLabel genreLabel = new JLabel("Genre:");
+        genreLabel.setForeground(Color.WHITE);
+        genreLabel.setFont(labelFont);
+        gbc.gridx = 0; gbc.gridy = 3; dialog.add(genreLabel, gbc);
+        gbc.gridx = 1; dialog.add(genreField, gbc);
+
+        JLabel copiesLabel = new JLabel("Total Copies:");
+        copiesLabel.setForeground(Color.WHITE);
+        copiesLabel.setFont(labelFont);
+        gbc.gridx = 0; gbc.gridy = 4; dialog.add(copiesLabel, gbc);
+        gbc.gridx = 1; dialog.add(copiesSpinner, gbc);
+
+        JPanel buttonPanel = new JPanel();
+        buttonPanel.setOpaque(false);
+        JButton saveButton = createStyledButton("Update", new Color(46, 204, 113));
+        JButton cancelButton = createStyledButton("Cancel", new Color(149, 165, 166));
+
+        saveButton.addActionListener(e -> {
+            String title = titleField.getText().trim();
+            String author = authorField.getText().trim();
+            String isbn = isbnField.getText().trim();
+            String genre = genreField.getText().trim();
+            int totalCopies = (int) copiesSpinner.getValue();
+            
+            if (title.isEmpty() || author.isEmpty() || isbn.isEmpty() || genre.isEmpty()) {
+                JOptionPane.showMessageDialog(dialog, "All fields are required!", "Validation Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            
+            if (DatabaseHelper.updateBook(bookId, title, author, isbn, genre, totalCopies)) {
+                JOptionPane.showMessageDialog(dialog, "Book updated successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+                loadBookData(); loadTransactionComboBoxes();
+                dialog.dispose();
+            } else {
+                JOptionPane.showMessageDialog(dialog, "Failed to update book.", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        cancelButton.addActionListener(e -> dialog.dispose());
+
+        buttonPanel.add(saveButton);
+        buttonPanel.add(cancelButton);
+
+        gbc.gridx = 0; gbc.gridy = 5; gbc.gridwidth = 2;
         dialog.add(buttonPanel, gbc);
         dialog.setVisible(true);
     }
@@ -753,6 +887,291 @@ public class InkVaultApp extends JFrame {
         }
     }
 
+    
+    // User Management Panel (Admin only)
+    private JPanel createUserManagementPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(new EmptyBorder(20, 20, 20, 20));
+        panel.setBackground(new Color(25, 25, 25));
+
+        JLabel title = new JLabel("User Management");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 24));
+        title.setForeground(Color.WHITE);
+        title.setBorder(new EmptyBorder(0, 0, 20, 0));
+        panel.add(title, BorderLayout.NORTH);
+
+        String[] columnNames = { "User ID", "Name", "Email", "Role", "Employee ID" };
+        DefaultTableModel userTableModel = new DefaultTableModel(columnNames, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) { return false; }
+        };
+        JTable userTable = new JTable(userTableModel);
+        styleTable(userTable);
+
+        JScrollPane scrollPane = new JScrollPane(userTable);
+        scrollPane.setBorder(BorderFactory.createLineBorder(new Color(50, 50, 50)));
+        panel.add(scrollPane, BorderLayout.CENTER);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 20, 10));
+        buttonPanel.setBackground(new Color(25, 25, 25));
+        buttonPanel.setBorder(new EmptyBorder(20, 0, 0, 0));
+        
+        JButton addButton = createStyledButton("Add User", new Color(46, 204, 113));
+        JButton deleteButton = createStyledButton("Delete User", new Color(231, 76, 60));
+        JButton refreshButton = createStyledButton("Refresh", new Color(52, 152, 219));
+
+        addButton.addActionListener(e -> showAddUserDialog(userTableModel));
+        deleteButton.addActionListener(e -> deleteSelectedUser(userTable, userTableModel));
+        refreshButton.addActionListener(e -> loadUserData(userTableModel));
+
+        buttonPanel.add(addButton);
+        buttonPanel.add(deleteButton);
+        buttonPanel.add(refreshButton);
+        panel.add(buttonPanel, BorderLayout.SOUTH);
+
+        loadUserData(userTableModel);
+        return panel;
+    }
+    
+    private void loadUserData(DefaultTableModel userTableModel) {
+        userTableModel.setRowCount(0);
+        List<User> users = DatabaseHelper.getAllUsers();
+        for (User u : users) {
+            String employeeId = "";
+            if (u instanceof Librarian) {
+                employeeId = ((Librarian) u).getEmployeeId();
+            }
+            Object[] row = { u.getUserId(), u.getName(), u.getEmail(), u.getRole(), employeeId };
+            userTableModel.addRow(row);
+        }
+    }
+    
+    private void showAddUserDialog(DefaultTableModel userTableModel) {
+        JDialog dialog = new JDialog(this, "Add New User", true);
+        dialog.setSize(450, 400);
+        dialog.setLocationRelativeTo(this);
+        dialog.setLayout(new GridBagLayout());
+        dialog.getContentPane().setBackground(new Color(30, 30, 30));
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(10, 10, 10, 10);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        JTextField nameField = new JTextField(20);
+        JTextField emailField = new JTextField(20);
+        JPasswordField passwordField = new JPasswordField(20);
+        JComboBox<String> roleCombo = new JComboBox<>(new String[]{"MEMBER", "LIBRARIAN", "ADMIN"});
+        JTextField employeeIdField = new JTextField(20);
+        
+        Font labelFont = new Font("Segoe UI", Font.BOLD, 14);
+
+        JLabel nameLabel = new JLabel("Name:");
+        nameLabel.setForeground(Color.WHITE);
+        nameLabel.setFont(labelFont);
+        gbc.gridx = 0; gbc.gridy = 0; dialog.add(nameLabel, gbc);
+        gbc.gridx = 1; dialog.add(nameField, gbc);
+
+        JLabel emailLabel = new JLabel("Email:");
+        emailLabel.setForeground(Color.WHITE);
+        emailLabel.setFont(labelFont);
+        gbc.gridx = 0; gbc.gridy = 1; dialog.add(emailLabel, gbc);
+        gbc.gridx = 1; dialog.add(emailField, gbc);
+
+        JLabel passwordLabel = new JLabel("Password:");
+        passwordLabel.setForeground(Color.WHITE);
+        passwordLabel.setFont(labelFont);
+        gbc.gridx = 0; gbc.gridy = 2; dialog.add(passwordLabel, gbc);
+        gbc.gridx = 1; dialog.add(passwordField, gbc);
+
+        JLabel roleLabel = new JLabel("Role:");
+        roleLabel.setForeground(Color.WHITE);
+        roleLabel.setFont(labelFont);
+        gbc.gridx = 0; gbc.gridy = 3; dialog.add(roleLabel, gbc);
+        gbc.gridx = 1; dialog.add(roleCombo, gbc);
+
+        JLabel empIdLabel = new JLabel("Employee ID:");
+        empIdLabel.setForeground(Color.WHITE);
+        empIdLabel.setFont(labelFont);
+        gbc.gridx = 0; gbc.gridy = 4; dialog.add(empIdLabel, gbc);
+        gbc.gridx = 1; dialog.add(employeeIdField, gbc);
+
+        JPanel buttonPanel = new JPanel();
+        buttonPanel.setOpaque(false);
+        JButton saveButton = createStyledButton("Save", new Color(46, 204, 113));
+        JButton cancelButton = createStyledButton("Cancel", new Color(149, 165, 166));
+
+        saveButton.addActionListener(e -> {
+            String name = nameField.getText().trim();
+            String email = emailField.getText().trim();
+            String password = new String(passwordField.getPassword()).trim();
+            String role = (String) roleCombo.getSelectedItem();
+            String employeeId = employeeIdField.getText().trim();
+            
+            if (name.isEmpty() || email.isEmpty() || password.isEmpty()) {
+                JOptionPane.showMessageDialog(dialog, "Name, email, and password are required!", "Validation Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            
+            String result = DatabaseHelper.addUser(name, email, password, role, employeeId);
+            if (result.equals("SUCCESS")) {
+                JOptionPane.showMessageDialog(dialog, "User added successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+                loadUserData(userTableModel);
+                dialog.dispose();
+            } else {
+                JOptionPane.showMessageDialog(dialog, result, "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        cancelButton.addActionListener(e -> dialog.dispose());
+
+        buttonPanel.add(saveButton);
+        buttonPanel.add(cancelButton);
+
+        gbc.gridx = 0; gbc.gridy = 5; gbc.gridwidth = 2;
+        dialog.add(buttonPanel, gbc);
+        dialog.setVisible(true);
+    }
+    
+    private void deleteSelectedUser(JTable userTable, DefaultTableModel userTableModel) {
+        int selectedRow = userTable.getSelectedRow();
+        if (selectedRow == -1) {
+            JOptionPane.showMessageDialog(this, "Please select a user to delete.", "No Selection", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        int userId = (int) userTableModel.getValueAt(selectedRow, 0);
+        String name = (String) userTableModel.getValueAt(selectedRow, 1);
+
+        int confirm = JOptionPane.showConfirmDialog(this, "Are you sure you want to delete user: " + name + "?", "Confirm Delete", JOptionPane.YES_NO_OPTION);
+        if (confirm == JOptionPane.YES_OPTION) {
+            if (DatabaseHelper.deleteUser(userId)) {
+                JOptionPane.showMessageDialog(this, "User deleted successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+                loadUserData(userTableModel);
+            } else {
+                JOptionPane.showMessageDialog(this, "Failed to delete user.", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+    
+    // Transaction History Panel
+    private JPanel createTransactionHistoryPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(new EmptyBorder(20, 20, 20, 20));
+        panel.setBackground(new Color(25, 25, 25));
+
+        JLabel title = new JLabel("Complete Transaction History");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 24));
+        title.setForeground(Color.WHITE);
+        title.setBorder(new EmptyBorder(0, 0, 20, 0));
+        panel.add(title, BorderLayout.NORTH);
+
+        String[] columnNames = { "Tx ID", "Book", "Member", "Issue Date", "Due Date", "Return Date", "Fine ($)" };
+        DefaultTableModel historyTableModel = new DefaultTableModel(columnNames, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) { return false; }
+        };
+        JTable historyTable = new JTable(historyTableModel);
+        styleTable(historyTable);
+
+        JScrollPane scrollPane = new JScrollPane(historyTable);
+        scrollPane.setBorder(BorderFactory.createLineBorder(new Color(50, 50, 50)));
+        panel.add(scrollPane, BorderLayout.CENTER);
+
+        JButton refreshButton = createStyledButton("Refresh", new Color(52, 152, 219));
+        refreshButton.addActionListener(e -> loadTransactionHistory(historyTableModel));
+        
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        buttonPanel.setBackground(new Color(25, 25, 25));
+        buttonPanel.add(refreshButton);
+        panel.add(buttonPanel, BorderLayout.SOUTH);
+
+        loadTransactionHistory(historyTableModel);
+        return panel;
+    }
+    
+    private void loadTransactionHistory(DefaultTableModel historyTableModel) {
+        historyTableModel.setRowCount(0);
+        List<Transaction> transactions = DatabaseHelper.getAllTransactionsHistory();
+        for (Transaction t : transactions) {
+            Book book = DatabaseHelper.getBookById(t.getBookId());
+            Member member = DatabaseHelper.getMemberById(t.getMemberId());
+            
+            String returnDate = t.getReturnDate() != null ? t.getReturnDate().toString() : "Not Returned";
+            String fine = String.format("%.2f", t.getFineAmount());
+            
+            Object[] row = {
+                t.getTransactionId(),
+                book != null ? book.getTitle() : "Unknown",
+                member != null ? member.getName() : "Unknown",
+                t.getIssueDate().toString(),
+                t.getDueDate().toString(),
+                returnDate,
+                fine
+            };
+            historyTableModel.addRow(row);
+        }
+    }
+    
+    // Member's personal transaction panel
+    private JPanel createMemberTransactionPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(new EmptyBorder(20, 20, 20, 20));
+        panel.setBackground(new Color(25, 25, 25));
+
+        JLabel title = new JLabel("My Borrowed Books");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 24));
+        title.setForeground(Color.WHITE);
+        title.setBorder(new EmptyBorder(0, 0, 20, 0));
+        panel.add(title, BorderLayout.NORTH);
+
+        String[] columnNames = { "Book Title", "Author", "Issue Date", "Due Date", "Status" };
+        DefaultTableModel myBooksTableModel = new DefaultTableModel(columnNames, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) { return false; }
+        };
+        JTable myBooksTable = new JTable(myBooksTableModel);
+        styleTable(myBooksTable);
+
+        JScrollPane scrollPane = new JScrollPane(myBooksTable);
+        scrollPane.setBorder(BorderFactory.createLineBorder(new Color(50, 50, 50)));
+        panel.add(scrollPane, BorderLayout.CENTER);
+
+        JButton refreshButton = createStyledButton("Refresh", new Color(52, 152, 219));
+        refreshButton.addActionListener(e -> loadMemberBooks(myBooksTableModel));
+        
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        buttonPanel.setBackground(new Color(25, 25, 25));
+        buttonPanel.add(refreshButton);
+        panel.add(buttonPanel, BorderLayout.SOUTH);
+
+        loadMemberBooks(myBooksTableModel);
+        return panel;
+    }
+    
+    private void loadMemberBooks(DefaultTableModel myBooksTableModel) {
+        myBooksTableModel.setRowCount(0);
+        List<Transaction> transactions = DatabaseHelper.getAllTransactions();
+        for (Transaction t : transactions) {
+            if (t.getMemberId() == loggedInUser.getUserId()) {
+                Book book = DatabaseHelper.getBookById(t.getBookId());
+                
+                String status = "Active";
+                if (libraryService.checkOverdue(t)) {
+                    long overdueDays = libraryService.calculateOverdueDays(t);
+                    status = "OVERDUE (" + overdueDays + " days)";
+                }
+                
+                Object[] row = {
+                    book != null ? book.getTitle() : "Unknown",
+                    book != null ? book.getAuthor() : "Unknown",
+                    t.getIssueDate().toString(),
+                    t.getDueDate().toString(),
+                    status
+                };
+                myBooksTableModel.addRow(row);
+            }
+        }
+    }
+
     public static void main(String[] args) {
         DatabaseHelper.initializeDatabase();
         
@@ -767,8 +1186,8 @@ public class InkVaultApp extends JFrame {
         }
 
         SwingUtilities.invokeLater(() -> {
-            InkVaultApp app = new InkVaultApp();
-            app.setVisible(true);
+            LoginFrame loginFrame = new LoginFrame();
+            loginFrame.setVisible(true);
         });
     }
 }
