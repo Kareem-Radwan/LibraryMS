@@ -1,0 +1,34 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "InkVaultApp",
+            "request": "launch",
+            "mainClass": "InkVaultApp",
+            "projectName": "Library_2e3e0603"
+        },
+        {
+            "type": "java",
+            "name": "CreateDatabase",
+            "request": "launch",
+            "mainClass": "CreateDatabase",
+            "projectName": "Library_2e3e0603"
+        },
+        {
+            "type": "java",
+            "name": "Launch InkVaultApp",
+            "request": "launch",
+            "mainClass": "InkVaultApp",
+            "projectName": "Library",
+            "classPaths": [
+                "${workspaceFolder}/bin",
+                "${workspaceFolder}/lib/sqlite-jdbc-3.46.0.0.jar",
+                "${workspaceFolder}/lib/slf4j-api-2.0.13.jar",
+                "${workspaceFolder}/lib/slf4j-nop-2.0.13.jar"
+            ],
+            "vmArgs": "--enable-native-access=ALL-UNNAMED",
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
