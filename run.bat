@@ -1,0 +1,3 @@
+@echo off
+echo Starting InkVault Library Management System...
+"C:\Program Files\Java\jdk-26.0.1\bin\java.exe" -cp "bin;lib/flatlaf.jar;lib/sqlite-jdbc-3.46.0.0.jar;lib/slf4j-api-2.0.13.jar;lib/slf4j-nop-2.0.13.jar;lib/jbcrypt-0.4.jar" LoginFrame

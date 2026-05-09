@@ -28,7 +28,7 @@ public class LibraryService {
 
         if (success) {
             book.setAvailableCopies(book.getAvailableCopies() - 1);
-            DatabaseHelper.updateBookAvailability(book.getBookId(), false);
+            DatabaseHelper.updateBookAvailability(book.getBookId(), book.getAvailableCopies());
             DatabaseHelper.updateMemberBorrowedCount(member.getUserId(), member.getBorrowedCount() + 1);
             member.addTransaction(new Transaction(0, book.getBookId(), member.getUserId(), issueDate, dueDate));
             System.out.println("Success: Book issued. Due on " + dueDate.toString());
@@ -63,7 +63,7 @@ public class LibraryService {
             DatabaseHelper.updateTransactionFine(transaction.getTransactionId(), fine);
             
             book.setAvailableCopies(book.getAvailableCopies() + 1);
-            DatabaseHelper.updateBookAvailability(book.getBookId(), true);
+            DatabaseHelper.updateBookAvailability(book.getBookId(), book.getAvailableCopies());
             member.decrementBorrowedCount();
             DatabaseHelper.updateMemberBorrowedCount(member.getUserId(), member.getBorrowedCount());
             System.out.println("Success: Book returned. Fine: $" + fine);

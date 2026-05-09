@@ -245,14 +245,14 @@ public class InkVaultApp extends JFrame {
         searchIcon.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         JTextField searchField = new JTextField(20);
         searchField.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-        searchField.putClientProperty("JTextField.placeholderText", "Title, Author, ISBN...");
+        searchField.putClientProperty("JTextField.placeholderText", "Title, Author, ISBN, Genre...");
         searchPanel.add(searchIcon);
         searchPanel.add(searchField);
         headerPanel.add(searchPanel, BorderLayout.EAST);
         
         panel.add(headerPanel, BorderLayout.NORTH);
 
-        String[] columnNames = { "Book ID", "Title", "Author", "ISBN", "Status" };
+        String[] columnNames = { "Book ID", "Title", "Author", "ISBN", "Genre", "Status" };
         bookTableModel = new DefaultTableModel(columnNames, 0) {
             @Override
             public boolean isCellEditable(int row, int column) { return false; }
@@ -536,7 +536,7 @@ public class InkVaultApp extends JFrame {
         bookTableModel.setRowCount(0);
         List<Book> books = DatabaseHelper.getAllBooks();
         for (Book b : books) {
-            Object[] row = { b.getBookId(), b.getTitle(), b.getAuthor(), b.getIsbn(), b.isAvailable() ? "Available" : "Checked Out" };
+            Object[] row = { b.getBookId(), b.getTitle(), b.getAuthor(), b.getIsbn(), b.getGenre(), b.isAvailable() ? "Available" : "Checked Out" };
             bookTableModel.addRow(row);
         }
     }
@@ -813,6 +813,11 @@ public class InkVaultApp extends JFrame {
     }
 
     private void loadTransactionComboBoxes() {
+        // Check if combo boxes are initialized (transaction panel might not be created yet)
+        if (bookCombo == null || memberCombo == null) {
+            return;
+        }
+        
         bookCombo.removeAllItems();
         memberCombo.removeAllItems();
 

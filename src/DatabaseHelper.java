@@ -58,18 +58,25 @@ public class DatabaseHelper {
             stmt.execute(createUsersTable);
             stmt.execute(createTransactionsTable);
             stmt.execute(createSettingsTable);
-            
+
             // Insert default settings
             stmt.execute("INSERT OR IGNORE INTO settings VALUES ('finePerDay', '1.0')");
             stmt.execute("INSERT OR IGNORE INTO settings VALUES ('maxBorrowLimit', '3')");
             stmt.execute("INSERT OR IGNORE INTO settings VALUES ('loanPeriodDays', '14')");
-            
+
             // Create default admin if no users exist
             ResultSet rs = stmt.executeQuery("SELECT COUNT(*) as count FROM users");
             if (rs.next() && rs.getInt("count") == 0) {
-                stmt.execute("INSERT INTO users (name, email, password, role) VALUES ('Admin', 'admin@inkvault.com', 'admin123', 'ADMIN')");
+                String hashedPassword = PasswordUtil.hashPassword("admin123");
+                PreparedStatement pstmt = conn.prepareStatement(
+                        "INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)");
+                pstmt.setString(1, "Admin");
+                pstmt.setString(2, "admin@inkvault.com");
+                pstmt.setString(3, hashedPassword);
+                pstmt.setString(4, "ADMIN");
+                pstmt.executeUpdate();
             }
-            
+
             System.out.println("Database initialized successfully.");
 
         } catch (SQLException e) {
@@ -141,13 +148,13 @@ public class DatabaseHelper {
         }
     }
 
-    public static boolean updateBookAvailability(int bookId, boolean isAvailable) {
+    public static boolean updateBookAvailability(int bookId, int availableCopies) {
         String query = "UPDATE books SET availableCopies = ? WHERE bookId = ?";
 
         try (Connection conn = DriverManager.getConnection(URL);
                 PreparedStatement pstmt = conn.prepareStatement(query)) {
 
-            pstmt.setInt(1, isAvailable ? 1 : 0);
+            pstmt.setInt(1, availableCopies);
             pstmt.setInt(2, bookId);
             pstmt.executeUpdate();
             return true;
@@ -189,7 +196,7 @@ public class DatabaseHelper {
 
             pstmt.setString(1, name);
             pstmt.setString(2, email);
-            pstmt.setString(3, "password123"); // Default password
+            pstmt.setString(3, PasswordUtil.hashPassword("password123")); // Hash default password
             pstmt.executeUpdate();
             return "SUCCESS";
 
@@ -269,18 +276,18 @@ public class DatabaseHelper {
             return false;
         }
     }
-    
+
     public static boolean updateTransactionFine(int transactionId, double fine) {
         String query = "UPDATE transactions SET fineAmount = ? WHERE transactionId = ?";
-        
+
         try (Connection conn = DriverManager.getConnection(URL);
-             PreparedStatement pstmt = conn.prepareStatement(query)) {
-            
+                PreparedStatement pstmt = conn.prepareStatement(query)) {
+
             pstmt.setDouble(1, fine);
             pstmt.setInt(2, transactionId);
             pstmt.executeUpdate();
             return true;
-            
+
         } catch (SQLException e) {
             System.err.println("Error updating fine: " + e.getMessage());
             return false;
@@ -362,28 +369,33 @@ public class DatabaseHelper {
 
     // Authentication
     public static User authenticateUser(String email, String password) {
-        String query = "SELECT * FROM users WHERE email = ? AND password = ?";
-        
+        String query = "SELECT * FROM users WHERE email = ?";
+
         try (Connection conn = DriverManager.getConnection(URL);
-             PreparedStatement pstmt = conn.prepareStatement(query)) {
-            
+                PreparedStatement pstmt = conn.prepareStatement(query)) {
+
             pstmt.setString(1, email);
-            pstmt.setString(2, password);
             ResultSet rs = pstmt.executeQuery();
-            
+
             if (rs.next()) {
+                String storedPassword = rs.getString("password");
+                
+                // Verify password using BCrypt
+                if (!PasswordUtil.verifyPassword(password, storedPassword)) {
+                    return null;
+                }
+                
                 String role = rs.getString("role");
                 int userId = rs.getInt("userId");
                 String name = rs.getString("name");
-                String userPassword = rs.getString("password");
-                
+
                 if (role.equals("ADMIN")) {
-                    return new Admin(userId, name, email, userPassword);
+                    return new Admin(userId, name, email, storedPassword);
                 } else if (role.equals("LIBRARIAN")) {
                     String employeeId = rs.getString("employeeId");
-                    return new Librarian(userId, name, email, employeeId != null ? employeeId : "", userPassword);
+                    return new Librarian(userId, name, email, employeeId != null ? employeeId : "", storedPassword);
                 } else if (role.equals("MEMBER")) {
-                    Member member = new Member(userId, name, email, userPassword);
+                    Member member = new Member(userId, name, email, storedPassword);
                     member.setBorrowedCount(rs.getInt("borrowedCount"));
                     return member;
                 }
@@ -393,23 +405,23 @@ public class DatabaseHelper {
         }
         return null;
     }
-    
+
     // User Management
     public static List<User> getAllUsers() {
         List<User> users = new ArrayList<>();
         String query = "SELECT * FROM users";
-        
+
         try (Connection conn = DriverManager.getConnection(URL);
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(query)) {
-            
+                Statement stmt = conn.createStatement();
+                ResultSet rs = stmt.executeQuery(query)) {
+
             while (rs.next()) {
                 String role = rs.getString("role");
                 int userId = rs.getInt("userId");
                 String name = rs.getString("name");
                 String email = rs.getString("email");
                 String password = rs.getString("password");
-                
+
                 if (role.equals("ADMIN")) {
                     users.add(new Admin(userId, name, email, password));
                 } else if (role.equals("LIBRARIAN")) {
@@ -426,21 +438,21 @@ public class DatabaseHelper {
         }
         return users;
     }
-    
+
     public static String addUser(String name, String email, String password, String role, String employeeId) {
         String query = "INSERT INTO users (name, email, password, role, employeeId, borrowedCount) VALUES (?, ?, ?, ?, ?, 0)";
-        
+
         try (Connection conn = DriverManager.getConnection(URL);
-             PreparedStatement pstmt = conn.prepareStatement(query)) {
-            
+                PreparedStatement pstmt = conn.prepareStatement(query)) {
+
             pstmt.setString(1, name);
             pstmt.setString(2, email);
-            pstmt.setString(3, password);
+            pstmt.setString(3, PasswordUtil.hashPassword(password)); // Hash password
             pstmt.setString(4, role);
             pstmt.setString(5, employeeId);
             pstmt.executeUpdate();
             return "SUCCESS";
-            
+
         } catch (SQLException e) {
             if (e.getMessage().contains("UNIQUE constraint failed")) {
                 return "Email already exists in the database.";
@@ -448,60 +460,74 @@ public class DatabaseHelper {
             return "Error: " + e.getMessage();
         }
     }
-    
+
     public static boolean deleteUser(int userId) {
         String query = "DELETE FROM users WHERE userId = ?";
-        
+
         try (Connection conn = DriverManager.getConnection(URL);
-             PreparedStatement pstmt = conn.prepareStatement(query)) {
-            
+                PreparedStatement pstmt = conn.prepareStatement(query)) {
+
             pstmt.setInt(1, userId);
             int rowsAffected = pstmt.executeUpdate();
             return rowsAffected > 0;
-            
+
         } catch (SQLException e) {
             System.err.println("Error deleting user: " + e.getMessage());
             return false;
         }
     }
-    
-    public static boolean updateBook(int bookId, String title, String author, String isbn, String genre, int totalCopies) {
-        String query = "UPDATE books SET title = ?, author = ?, isbn = ?, genre = ?, totalCopies = ? WHERE bookId = ?";
-        
+
+    public static boolean updateBook(int bookId, String title, String author, String isbn, String genre,
+            int totalCopies) {
+        Book currentBook = getBookById(bookId);
+        if (currentBook == null) {
+            return false;
+        }
+
+        int borrowedCopies = currentBook.getTotalCopies() - currentBook.getAvailableCopies();
+
+        int newAvailableCopies = totalCopies - borrowedCopies;
+
+        if (newAvailableCopies < 0) {
+            newAvailableCopies = 0;
+        }
+
+        String query = "UPDATE books SET title = ?, author = ?, isbn = ?, genre = ?, totalCopies = ?, availableCopies = ? WHERE bookId = ?";
+
         try (Connection conn = DriverManager.getConnection(URL);
-             PreparedStatement pstmt = conn.prepareStatement(query)) {
-            
+                PreparedStatement pstmt = conn.prepareStatement(query)) {
+
             pstmt.setString(1, title);
             pstmt.setString(2, author);
             pstmt.setString(3, isbn);
             pstmt.setString(4, genre);
             pstmt.setInt(5, totalCopies);
-            pstmt.setInt(6, bookId);
+            pstmt.setInt(6, newAvailableCopies);
+            pstmt.setInt(7, bookId);
             pstmt.executeUpdate();
             return true;
-            
+
         } catch (SQLException e) {
             System.err.println("Error updating book: " + e.getMessage());
             return false;
         }
     }
-    
+
     public static List<Transaction> getAllTransactionsHistory() {
         List<Transaction> transactions = new ArrayList<>();
         String query = "SELECT * FROM transactions ORDER BY transactionId DESC";
-        
+
         try (Connection conn = DriverManager.getConnection(URL);
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(query)) {
-            
+                Statement stmt = conn.createStatement();
+                ResultSet rs = stmt.executeQuery(query)) {
+
             while (rs.next()) {
                 Transaction t = new Transaction(
-                    rs.getInt("transactionId"),
-                    rs.getInt("bookId"),
-                    rs.getInt("memberId"),
-                    java.time.LocalDate.parse(rs.getString("issueDate")),
-                    java.time.LocalDate.parse(rs.getString("dueDate"))
-                );
+                        rs.getInt("transactionId"),
+                        rs.getInt("bookId"),
+                        rs.getInt("memberId"),
+                        java.time.LocalDate.parse(rs.getString("issueDate")),
+                        java.time.LocalDate.parse(rs.getString("dueDate")));
                 String returnDate = rs.getString("returnDate");
                 if (returnDate != null) {
                     t.setReturnDate(java.time.LocalDate.parse(returnDate));
@@ -514,10 +540,11 @@ public class DatabaseHelper {
         }
         return transactions;
     }
+
     public static String getSetting(String key) {
         String query = "SELECT settingValue FROM settings WHERE settingKey = ?";
         try (Connection conn = DriverManager.getConnection(URL);
-             PreparedStatement pstmt = conn.prepareStatement(query)) {
+                PreparedStatement pstmt = conn.prepareStatement(query)) {
             pstmt.setString(1, key);
             ResultSet rs = pstmt.executeQuery();
             if (rs.next()) {
@@ -532,7 +559,7 @@ public class DatabaseHelper {
     public static boolean updateSetting(String key, String value) {
         String query = "UPDATE settings SET settingValue = ? WHERE settingKey = ?";
         try (Connection conn = DriverManager.getConnection(URL);
-             PreparedStatement pstmt = conn.prepareStatement(query)) {
+                PreparedStatement pstmt = conn.prepareStatement(query)) {
             pstmt.setString(1, value);
             pstmt.setString(2, key);
             pstmt.executeUpdate();
